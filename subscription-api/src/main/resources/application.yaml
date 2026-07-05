@@ -1,0 +1,25 @@
+server:
+  port: 8081
+
+# Per-network confirmation depth defaults per design decision 11.
+networks:
+  ethereum:
+    chainId: 1
+    rpcUrl: "https://eth-mainnet.public.blastapi.io"
+    confirmationDepth: 12
+  arbitrum:
+    chainId: 42161
+    rpcUrl: "https://arb1.arbitrum.io/rpc"
+    confirmationDepth: 20
+  base:
+    chainId: 8453
+    rpcUrl: "https://mainnet.base.org"
+    confirmationDepth: 20
+  optimism:
+    chainId: 10
+    rpcUrl: "https://mainnet.optimism.io"
+    confirmationDepth: 20
+  polygon:
+    chainId: 137
+    rpcUrl: "https://polygon-rpc.com"
+    confirmationDepth: 128

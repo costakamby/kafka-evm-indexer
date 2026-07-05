@@ -1,0 +1,80 @@
+name: kafka-evm-indexer
+
+services:
+  kafka:
+    image: apache/kafka:3.8.1
+    container_name: kafka-evm-indexer-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:19092,CONTROLLER://0.0.0.0:19093,EXTERNAL://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:19092,EXTERNAL://localhost:9092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:19093
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      CLUSTER_ID: "kafka-evm-indexer-kraft-cluster-1"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+    healthcheck:
+      test: ["CMD-SHELL", "/opt/kafka/bin/kafka-broker-api-versions.sh --bootstrap-server localhost:19092 || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
+
+  postgres:
+    image: postgres:16
+    container_name: kafka-evm-indexer-postgres
+    ports:
+      - "15432:5432"
+    environment:
+      POSTGRES_USER: indexer
+      POSTGRES_PASSWORD: indexer
+      POSTGRES_DB: indexer
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U indexer -d indexer"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  kafbat-ui:
+    image: ghcr.io/kafbat/kafka-ui:latest
+    container_name: kafka-evm-indexer-kafbat-ui
+    ports:
+      - "18080:8080"
+    environment:
+      DYNAMIC_CONFIG_ENABLED: "true"
+      KAFKA_CLUSTERS_0_NAME: local
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:19092
+    depends_on:
+      kafka:
+        condition: service_healthy
+
+  # Anvil forks a real chain at a pinned block for deterministic integration
+  # testing (design doc section 5.3) - never fork "latest". Override
+  # ANVIL_FORK_URL and ANVIL_FORK_BLOCK in a checked-out .env file; see
+  # .env.example.
+  anvil:
+    image: ghcr.io/foundry-rs/foundry:latest
+    container_name: kafka-evm-indexer-anvil
+    entrypoint: ["anvil"]
+    command:
+      - "--host=0.0.0.0"
+      - "--fork-url=${ANVIL_FORK_URL:?set ANVIL_FORK_URL in .env, see .env.example}"
+      - "--fork-block-number=${ANVIL_FORK_BLOCK:?set ANVIL_FORK_BLOCK in .env, see .env.example}"
+      - "--chain-id=31337"
+      - "--block-time=1"
+    ports:
+      - "8545:8545"
+
+volumes:
+  kafka-data:
+  postgres-data:
