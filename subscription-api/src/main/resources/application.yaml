@@ -1,6 +1,10 @@
 server:
   port: 8081
 
+kafka:
+  bootstrapServers: "localhost:9092"
+  applicationId: "subscription-api"
+
 # Per-network confirmation depth defaults per design decision 11.
 networks:
   ethereum:

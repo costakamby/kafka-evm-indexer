@@ -8,6 +8,9 @@ application {
 
 dependencies {
     implementation(project(":schema"))
+    implementation(project(":decoder"))
+    implementation(project(":streams-topology"))
+    implementation(project(":topic-admin"))
 
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.core)
@@ -34,4 +37,5 @@ dependencies {
 
     testImplementation(libs.ktor.server.test.host)
     testImplementation(libs.kafka.streams.test.utils)
+    testImplementation(libs.awaitility.kotlin)
 }
