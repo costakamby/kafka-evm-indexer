@@ -1,0 +1,50 @@
+# ingestion-ws module config (Hoplite-loaded).
+#
+# subscriptionApi.baseUrl points at the subscription-api module's REST API
+# (owned by another agent's module) - default matches its default server
+# port (8081, see subscription-api/src/main/resources/application.yaml).
+subscriptionApi:
+  baseUrl: "http://localhost:8081"
+  refreshIntervalSeconds: 5
+
+kafka:
+  bootstrapServers: "localhost:9092"
+  rawLogsTopic: "raw-logs-topic"
+
+# Per-network confirmation depth defaults per design decision 11, mirrored
+# from the fleet-wide values for shape-consistency (confirmationDepth is not
+# acted on directly by this module). rpcUrl is the free public HTTPS RPC used
+# for eth_getLogs catch-up calls.
+#
+# wsRpcUrl is a PLACEHOLDER. The free public per-network RPC URLs below are
+# HTTPS, not WSS - real eth_subscribe needs a websocket endpoint. Replace
+# every wsRpcUrl with a real wss:// endpoint (e.g. an Alchemy or Infura
+# websocket URL, one per network) via this file or an env override before
+# running this module against a real chain. Until then, WS ingestion will
+# fail to connect - this is expected and intentional, not a bug.
+networks:
+  ethereum:
+    chainId: 1
+    rpcUrl: "https://eth-mainnet.public.blastapi.io"
+    wsRpcUrl: "wss://REPLACE_WITH_REAL_WSS_ENDPOINT/ethereum"
+    confirmationDepth: 12
+  arbitrum:
+    chainId: 42161
+    rpcUrl: "https://arb1.arbitrum.io/rpc"
+    wsRpcUrl: "wss://REPLACE_WITH_REAL_WSS_ENDPOINT/arbitrum"
+    confirmationDepth: 20
+  base:
+    chainId: 8453
+    rpcUrl: "https://mainnet.base.org"
+    wsRpcUrl: "wss://REPLACE_WITH_REAL_WSS_ENDPOINT/base"
+    confirmationDepth: 20
+  optimism:
+    chainId: 10
+    rpcUrl: "https://mainnet.optimism.io"
+    wsRpcUrl: "wss://REPLACE_WITH_REAL_WSS_ENDPOINT/optimism"
+    confirmationDepth: 20
+  polygon:
+    chainId: 137
+    rpcUrl: "https://polygon-rpc.com"
+    wsRpcUrl: "wss://REPLACE_WITH_REAL_WSS_ENDPOINT/polygon"
+    confirmationDepth: 128
