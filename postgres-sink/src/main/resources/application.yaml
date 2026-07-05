@@ -1,0 +1,10 @@
+kafka:
+  bootstrapServers: "localhost:9092"
+  topic: "confirmed-events-topic"
+  groupId: "postgres-sink"
+  pollTimeoutMs: 500
+
+postgres:
+  jdbcUrl: "jdbc:postgresql://localhost:15432/indexer"
+  username: "indexer"
+  password: "indexer"
