@@ -1,0 +1,32 @@
+# Per-network values must mirror every other module's application.yaml exactly
+# (design decision 11 / fleet consistency requirement).
+networks:
+  ethereum:
+    chainId: 1
+    rpcUrl: "https://eth-mainnet.public.blastapi.io"
+    confirmationDepth: 12
+  arbitrum:
+    chainId: 42161
+    rpcUrl: "https://arb1.arbitrum.io/rpc"
+    confirmationDepth: 20
+  base:
+    chainId: 8453
+    rpcUrl: "https://mainnet.base.org"
+    confirmationDepth: 20
+  optimism:
+    chainId: 10
+    rpcUrl: "https://mainnet.optimism.io"
+    confirmationDepth: 20
+  polygon:
+    chainId: 137
+    rpcUrl: "https://polygon-rpc.com"
+    confirmationDepth: 128
+
+poll:
+  subscriptionApiBaseUrl: "http://localhost:8081"
+  pollIntervalMs: 15000
+  maxBlockRange: 2000
+  maxRetries: 5
+  initialBackoffMs: 200
+  maxBackoffMs: 10000
+  kafkaBootstrapServers: "localhost:9092"

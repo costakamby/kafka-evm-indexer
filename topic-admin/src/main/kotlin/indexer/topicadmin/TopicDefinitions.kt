@@ -53,5 +53,18 @@ object TopicDefinitions {
             replicationFactor = 1,
             cleanupPolicy = CleanupPolicy.DELETE,
         ),
+        // Added by ingestion-poll: durable per-(network, contract) last-polled-block
+        // watermark. The design doc identifies "no in-memory-only state that doesn't
+        // survive a restart" as a gap for this specific value - a restart without this
+        // would either reprocess an unbounded amount of history or silently drop
+        // progress. Compacted (like subscriptions-topic) since only the latest value
+        // per (network, contract) key ever matters; see
+        // indexer.ingestionpoll.progress.KafkaPollProgressStore.
+        TopicDefinition(
+            name = "poll-progress-topic",
+            partitions = 3,
+            replicationFactor = 1,
+            cleanupPolicy = CleanupPolicy.COMPACT,
+        ),
     )
 }
