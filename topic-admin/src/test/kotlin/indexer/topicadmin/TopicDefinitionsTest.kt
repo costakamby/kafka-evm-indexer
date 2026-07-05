@@ -27,6 +27,16 @@ class TopicDefinitionsTest {
     }
 
     @Test
+    fun `poll-progress-topic is compacted`() {
+        // ingestion-poll's durable per-(network, contract) last-polled-block watermark
+        // (design doc: "no in-memory-only state that doesn't survive a restart"). Compacted
+        // like subscriptions-topic since only the latest value per key matters.
+        val definition = TopicDefinitions.ALL.first { it.name == "poll-progress-topic" }
+
+        definition.cleanupPolicy shouldBe CleanupPolicy.COMPACT
+    }
+
+    @Test
     fun `every topic has a distinct name and at least one partition`() {
         val names = TopicDefinitions.ALL.map { it.name }
 
