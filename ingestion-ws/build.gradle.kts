@@ -30,4 +30,13 @@ dependencies {
 
     testImplementation(libs.wiremock)
     testImplementation(libs.awaitility.kotlin)
+    testImplementation(libs.kotlinx.coroutines.test)
+
+    // Test-only fake local WS + JSON-RPC HTTP server (component tests, section 5.2
+    // layer 3) - never a real chain, never WireMock-for-websockets (WireMock has no
+    // real WS support). Kept testImplementation-only, no runtime footprint.
+    testImplementation(libs.ktor.server.core)
+    testImplementation(libs.ktor.server.cio)
+    testImplementation(libs.ktor.server.websockets)
+    testImplementation(libs.ktor.server.content.negotiation)
 }
