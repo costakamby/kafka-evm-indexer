@@ -1,0 +1,29 @@
+[
+  {
+    "type": "event",
+    "name": "OrderFilled",
+    "anonymous": false,
+    "inputs": [
+      { "name": "maker", "type": "address", "indexed": true },
+      {
+        "name": "order",
+        "type": "tuple",
+        "indexed": false,
+        "components": [
+          { "name": "id", "type": "uint256" },
+          {
+            "name": "asset",
+            "type": "tuple",
+            "components": [
+              { "name": "token", "type": "address" },
+              { "name": "delta", "type": "int256" }
+            ]
+          },
+          { "name": "active", "type": "bool" }
+        ]
+      },
+      { "name": "amounts", "type": "uint256[]", "indexed": false },
+      { "name": "memo", "type": "string", "indexed": false }
+    ]
+  }
+]

@@ -33,4 +33,12 @@ class AppConfigLoaderTest {
 
         config.server.port shouldBe 8081
     }
+
+    @Test
+    fun `kafka config has bootstrap servers and an application id`() {
+        val config = AppConfigLoader.load()
+
+        config.kafka.bootstrapServers shouldBe "localhost:9092"
+        config.kafka.applicationId shouldBe "subscription-api"
+    }
 }
