@@ -72,4 +72,26 @@ class AppConfigLoaderTest {
 
         overridden.networks.getValue("ethereum").wsRpcUrl shouldBe config.networks.getValue("ethereum").wsRpcUrl
     }
+
+    @Test
+    fun `RPC_URL_ (NETWORK) env var overrides that network's checked-in rpcUrl, independently of WS_RPC_URL_`() {
+        val overridden = AppConfigLoader.load(
+            env = mapOf(
+                "RPC_URL_ETHEREUM" to "https://eth-mainnet.g.alchemy.com/v2/real-key",
+                "WS_RPC_URL_ETHEREUM" to "wss://eth-mainnet.g.alchemy.com/v2/real-key",
+            ),
+        )
+
+        overridden.networks.getValue("ethereum").rpcUrl shouldBe "https://eth-mainnet.g.alchemy.com/v2/real-key"
+        overridden.networks.getValue("ethereum").wsRpcUrl shouldBe "wss://eth-mainnet.g.alchemy.com/v2/real-key"
+        // networks with no matching env var keep the checked-in default untouched
+        overridden.networks.getValue("arbitrum").rpcUrl shouldBe config.networks.getValue("arbitrum").rpcUrl
+    }
+
+    @Test
+    fun `a blank RPC_URL_ (NETWORK) env var is ignored, not applied as an override`() {
+        val overridden = AppConfigLoader.load(env = mapOf("RPC_URL_ETHEREUM" to "   "))
+
+        overridden.networks.getValue("ethereum").rpcUrl shouldBe config.networks.getValue("ethereum").rpcUrl
+    }
 }

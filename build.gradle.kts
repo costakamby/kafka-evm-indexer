@@ -34,4 +34,27 @@ subprojects {
         add("testImplementation", kotestAssertionsCore)
         add("testImplementation", mockkLib)
     }
+
+    // `./gradlew :<module>:run` loads the repo-root .env (RPC_URL_<NETWORK> /
+    // WS_RPC_URL_<NETWORK> overrides, see ingestion-ws/ingestion-poll's
+    // AppConfigLoader) into the process environment automatically, so running
+    // a module doesn't require a manual `export $(cat .env | ...)` step
+    // first. Only affects the `run` task - running an installed
+    // distribution's bin script directly still needs .env exported manually.
+    pluginManager.withPlugin("application") {
+        tasks.withType<JavaExec>().matching { it.name == "run" }.configureEach {
+            val envFile = rootProject.file(".env")
+            if (envFile.exists()) {
+                environment(
+                    envFile.readLines()
+                        .filter { it.isNotBlank() && !it.trimStart().startsWith("#") }
+                        .mapNotNull { line ->
+                            val idx = line.indexOf('=')
+                            if (idx <= 0) null else line.substring(0, idx).trim() to line.substring(idx + 1).trim()
+                        }
+                        .toMap(),
+                )
+            }
+        }
+    }
 }

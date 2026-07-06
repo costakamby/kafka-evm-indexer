@@ -51,4 +51,30 @@ class PollAppConfigLoaderTest {
         config.poll.maxBackoffMs shouldBe 10000L
         config.poll.kafkaBootstrapServers shouldBe "localhost:9092"
     }
+
+    @Test
+    fun `RPC_URL_ (NETWORK) env var overrides that network's checked-in rpcUrl`() {
+        val default = PollAppConfigLoader.load()
+
+        val overridden = PollAppConfigLoader.load(
+            env = mapOf(
+                "RPC_URL_ETHEREUM" to "https://eth-mainnet.g.alchemy.com/v2/real-key",
+                "RPC_URL_POLYGON" to "https://polygon-mainnet.g.alchemy.com/v2/real-key",
+            ),
+        )
+
+        overridden.networks.getValue("ethereum").rpcUrl shouldBe "https://eth-mainnet.g.alchemy.com/v2/real-key"
+        overridden.networks.getValue("polygon").rpcUrl shouldBe "https://polygon-mainnet.g.alchemy.com/v2/real-key"
+        // networks with no matching env var keep the checked-in default untouched
+        overridden.networks.getValue("arbitrum").rpcUrl shouldBe default.networks.getValue("arbitrum").rpcUrl
+    }
+
+    @Test
+    fun `a blank RPC_URL_ (NETWORK) env var is ignored, not applied as an override`() {
+        val default = PollAppConfigLoader.load()
+
+        val overridden = PollAppConfigLoader.load(env = mapOf("RPC_URL_ETHEREUM" to "   "))
+
+        overridden.networks.getValue("ethereum").rpcUrl shouldBe default.networks.getValue("ethereum").rpcUrl
+    }
 }
