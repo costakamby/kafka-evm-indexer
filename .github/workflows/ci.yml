@@ -1,0 +1,103 @@
+name: CI
+
+# Design doc section 5.5 CI structure:
+#   - every commit/PR: fast tier (unit + TopologyTestDriver tests, no containers,
+#     should complete in well under a minute - the tight feedback loop every
+#     module iterates against).
+#   - every PR, gating merge to master: the full integration suite via
+#     Testcontainers + Anvil, including the reorg simulation and
+#     kill-instance-mid-test scenarios (design doc 4.8). This must be green
+#     before merge.
+#   - nightly/manual: the load/soak test (design doc 4.8's other bullet) - not
+#     yet implemented (see integration-tests module report), so no job for it
+#     here yet; add one once it exists, matching the `workflow_dispatch` +
+#     `schedule` pattern rather than running it on every PR.
+#
+# NOTE: this workflow has not been confirmed to run green on GitHub's actual
+# infrastructure from this sandboxed environment - the YAML/job structure is
+# sanity-checked locally (module/task names, working-directory-free repo
+# layout) but a real run needs to be confirmed once pushed.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  # Fast tier: unit tests + TopologyTestDriver tests across every module except
+  # integration-tests. Runs on every push and PR - no Docker/Testcontainers
+  # needed, so this is intentionally cheap and fast.
+  fast-tests:
+    name: Fast tests (unit + TopologyTestDriver)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Run fast test suite (all modules except integration-tests)
+        run: >
+          ./gradlew test
+          -x :integration-tests:test
+          --continue
+
+      - name: Upload fast-test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fast-test-reports
+          path: "**/build/reports/tests/test"
+          retention-days: 7
+
+  # Full tier: the entire Testcontainers + Anvil-backed integration suite
+  # (design doc 4.8) - reorg simulation, kill-instance-mid-test recovery, the
+  # full-stack happy-path smoke test. Gates merging to master: required on every
+  # PR targeting master. Needs Docker for Testcontainers (Kafka, Postgres) and
+  # for the Anvil (Foundry) container - ubuntu-latest GitHub-hosted runners ship
+  # Docker pre-installed and running, which is all Testcontainers needs (no
+  # docker-in-docker setup required).
+  integration-tests:
+    name: Full integration suite (Testcontainers + Anvil)
+    runs-on: ubuntu-latest
+    needs: fast-tests
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Verify Docker is available
+        run: docker version
+
+      - name: Run integration-tests
+        env:
+          # Anvil forks this RPC endpoint at the pinned block (design doc 5.3) -
+          # never "latest", so CI runs stay deterministic. Same default as
+          # .env.example; override via a repository/environment secret
+          # (ANVIL_FORK_URL) if this free public endpoint starts rate-limiting
+          # CI traffic.
+          ANVIL_FORK_URL: ${{ secrets.ANVIL_FORK_URL || 'https://eth-mainnet.public.blastapi.io' }}
+          ANVIL_FORK_BLOCK: ${{ secrets.ANVIL_FORK_BLOCK || '18000000' }}
+        run: ./gradlew :integration-tests:test
+
+      - name: Upload integration-test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-reports
+          path: integration-tests/build/reports/tests/test
+          retention-days: 7

@@ -19,6 +19,16 @@ class AnvilFixture private constructor(
     val credentials: Credentials,
     val chainId: Long,
     val rpc: AnvilRpcClient,
+    /** HTTP JSON-RPC endpoint (eth_getLogs / eth_blockNumber) - what ingestion-poll points at. */
+    val httpRpcUrl: String,
+    /**
+     * WebSocket JSON-RPC endpoint on the SAME mapped port - what ingestion-ws
+     * points at. The build brief calls this out explicitly: unlike the fleet's
+     * public HTTPS-only RPC URLs, Anvil's own ws:// endpoint is a real, working
+     * websocket eth_subscribe target, so the WS ingestion path can be exercised
+     * end-to-end here without a paid Alchemy/Infura wss endpoint.
+     */
+    val wsRpcUrl: String,
 ) : AutoCloseable {
 
     companion object {
@@ -45,10 +55,21 @@ class AnvilFixture private constructor(
             }
             container.start()
 
-            val rpcUrl = "http://${container.host}:${container.getMappedPort(ANVIL_PORT)}"
+            val host = container.host
+            val port = container.getMappedPort(ANVIL_PORT)
+            val rpcUrl = "http://$host:$port"
+            val wsUrl = "ws://$host:$port"
             val web3j = Web3j.build(HttpService(rpcUrl))
             val credentials = Credentials.create(DEV_PRIVATE_KEY)
-            return AnvilFixture(container, web3j, credentials, ANVIL_CHAIN_ID, AnvilRpcClient(rpcUrl))
+            return AnvilFixture(
+                container,
+                web3j,
+                credentials,
+                ANVIL_CHAIN_ID,
+                AnvilRpcClient(rpcUrl),
+                httpRpcUrl = rpcUrl,
+                wsRpcUrl = wsUrl,
+            )
         }
     }
 

@@ -12,6 +12,7 @@ import indexer.streamstopology.config.NetworkTopologyConfig
 import indexer.streamstopology.decode.DecodeTopology
 import indexer.streamstopology.lifecycle.BlockTrackingProcessor
 import indexer.streamstopology.lifecycle.LifecycleOutput
+import indexer.streamstopology.lifecycle.NetworkStreamPartitioner
 import indexer.streamstopology.lifecycle.ReconciliationProcessor
 import indexer.streamstopology.lifecycle.StoreNames
 import indexer.streamstopology.serde.jsonSerdeOf
@@ -24,6 +25,7 @@ import org.apache.kafka.streams.kstream.Consumed
 import org.apache.kafka.streams.kstream.Materialized
 import org.apache.kafka.streams.kstream.Named
 import org.apache.kafka.streams.kstream.Produced
+import org.apache.kafka.streams.kstream.Repartitioned
 import org.apache.kafka.streams.processor.api.ProcessorSupplier
 import org.apache.kafka.streams.state.KeyValueStore
 import org.apache.kafka.streams.state.Stores
@@ -104,9 +106,26 @@ object IndexerTopology {
             ),
         )
 
+        // BLOCK_TRACKING/RECONCILIATION/CONFIRMATION are addStateStore(...) stores -
+        // Kafka Streams gives each TASK (i.e. each partition of this co-partitioned
+        // sub-topology) its OWN local copy; a task can never see another task's slice.
+        // With >1 partition (production's real config - see TopicDefinitions), decoded
+        // events for one network MUST land on the exact same task as that network's
+        // raw-log-driven block-tracking updates, or BlockTrackingProcessor's punctuator
+        // can permanently miss promoting/invalidating them (see NetworkStreamPartitioner's
+        // kdoc for the full bug this fixes - found by this project's reorg end-to-end
+        // test). An explicit `.repartition(...)` with a NAMED stream partitioner (rather
+        // than the implicit auto-repartition selectKey would otherwise trigger, which
+        // uses Kafka's default key-hash partitioner) is what makes this deterministic and
+        // exactly matches decoded-logs-topic's own output partitioner in DecodeTopology.
         val fromBlockTracking = builder
             .stream(Topics.RAW_LOGS, Consumed.with(stringSerde, rawLogSerde))
             .selectKey({ _, raw -> raw.network }, Named.`as`("rekey-raw-logs-by-network-for-tracking"))
+            .repartition(
+                Repartitioned.with(stringSerde, rawLogSerde)
+                    .withName("raw-logs-by-network")
+                    .withStreamPartitioner(NetworkStreamPartitioner.forNetwork<String, RawLogRecord> { it.network }),
+            )
             .process(
                 ProcessorSupplier<String, RawLogRecord, String, LifecycleOutput> { BlockTrackingProcessor(config) },
                 Named.`as`("block-tracking-processor"),

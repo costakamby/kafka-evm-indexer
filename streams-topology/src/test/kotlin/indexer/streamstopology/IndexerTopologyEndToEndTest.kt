@@ -95,8 +95,17 @@ class IndexerTopologyEndToEndTest {
         )
         rawLogsIn.pipeInput(eventLog, Instant.ofEpochMilli(1000))
 
-        // Advance block-tracking on ethereum past the configured depth (5): blocks 101..105.
-        for (b in 101L..105L) {
+        // Advance block-tracking on ethereum past the configured depth (5): blocks
+        // 101..106. Depth 5 is reached once lastBlock=105 (105-100=5), but
+        // TopologyTestDriver's STREAM_TIME punctuator evaluates trailing/at rest -
+        // its schedule fires on the NEXT stream-time advance after a threshold is
+        // crossed, so the promotion triggered by lastBlock=105 is only actually
+        // evaluated once a further record (106) advances stream time again. This
+        // never matters in production (blocks keep arriving continuously); it's
+        // purely a synthetic-test artifact of stopping input at exactly the
+        // threshold, so one extra marker block is piped to observe the promotion
+        // this test asserts on.
+        for (b in 101L..106L) {
             val marker = eventLog.copy(txHash = "0xtx-marker-$b", logIndex = 1, blockNumber = b, blockHash = "0xblk$b")
             rawLogsIn.pipeInput(marker, Instant.ofEpochMilli(1000 + b * 1000))
         }
