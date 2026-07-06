@@ -2,6 +2,7 @@ package indexer.streamstopology.lifecycle
 
 import indexer.schema.ConfirmationStatus
 import indexer.schema.DecodedEventEnvelope
+import indexer.schema.EventKey
 import indexer.schema.ReconciliationAnomaly
 import indexer.schema.ReconciliationAnomalyType
 import indexer.schema.ktable.ConfirmationState
@@ -12,11 +13,20 @@ import org.apache.kafka.streams.processor.api.Record
 import org.apache.kafka.streams.state.KeyValueStore
 
 /**
- * Merges ws/poll sightings of the same event (keyed by [indexer.schema.EventKey])
- * into exactly one reconciliation-store entry (acceptance criterion 4.4), flags
- * DIVERGENT_DECODE immediately when a corroborating sighting disagrees with the
- * first, and seeds/refreshes the confirmation-store entry that
- * [BlockTrackingProcessor]'s punctuator later promotes or invalidates.
+ * Merges ws/poll sightings of the same event (identified by
+ * [indexer.schema.EventKey]) into exactly one reconciliation-store entry
+ * (acceptance criterion 4.4), flags DIVERGENT_DECODE immediately when a
+ * corroborating sighting disagrees with the first, and seeds/refreshes the
+ * confirmation-store entry that [BlockTrackingProcessor]'s punctuator later
+ * promotes or invalidates.
+ *
+ * The incoming record's KEY is "network" (this processor's input is an
+ * internal, network-partitioned repartition of decoded-logs-topic - see
+ * IndexerTopology's "decoded-logs-by-network" step - so it co-locates with
+ * BLOCK_TRACKING/CONFIRMATION on the same Streams task), NOT [indexer.schema.EventKey].
+ * The real per-event identity is recovered from the record's VALUE
+ * (network/txHash/logIndex) and used as the actual RECONCILIATION/CONFIRMATION
+ * store key, matching every other consumer of those stores.
  *
  * Retention (4.4's "must not grow unbounded" requirement): a reconciliation-store
  * entry is removed the moment its purpose is served - either both sources have
@@ -38,8 +48,8 @@ class ReconciliationProcessor : Processor<String, DecodedEventEnvelope, String, 
     }
 
     override fun process(record: Record<String, DecodedEventEnvelope>) {
-        val key = record.key()
         val incoming = record.value()
+        val key = EventKey.of(incoming.network, incoming.txHash, incoming.logIndex)
 
         val existing = reconciliationStore.get(key)
         val result = ReconciliationLogic.merge(existing, incoming, context.currentSystemTimeMs())

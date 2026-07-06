@@ -109,15 +109,17 @@ object IndexerTopology {
         // BLOCK_TRACKING/RECONCILIATION/CONFIRMATION are addStateStore(...) stores -
         // Kafka Streams gives each TASK (i.e. each partition of this co-partitioned
         // sub-topology) its OWN local copy; a task can never see another task's slice.
-        // With >1 partition (production's real config - see TopicDefinitions), decoded
-        // events for one network MUST land on the exact same task as that network's
-        // raw-log-driven block-tracking updates, or BlockTrackingProcessor's punctuator
-        // can permanently miss promoting/invalidating them (see NetworkStreamPartitioner's
-        // kdoc for the full bug this fixes - found by this project's reorg end-to-end
-        // test). An explicit `.repartition(...)` with a NAMED stream partitioner (rather
-        // than the implicit auto-repartition selectKey would otherwise trigger, which
-        // uses Kafka's default key-hash partitioner) is what makes this deterministic and
-        // exactly matches decoded-logs-topic's own output partitioner in DecodeTopology.
+        // With >1 partition (production's real config - see TopicDefinitions), every
+        // record touching these stores for a given network MUST land on the exact
+        // same task as that network's block-tracking updates, or BlockTrackingProcessor's
+        // punctuator can permanently miss promoting/invalidating them (see
+        // NetworkStreamPartitioner's kdoc for the full bug this fixes - found by this
+        // project's reorg end-to-end test). Both raw-logs-topic and decoded-logs-topic
+        // are external topics with their OWN contracts (EventKey-keyed, default
+        // partitioning) that other consumers rely on - so rather than silently
+        // overriding either topic's own partitioning, EACH internal consumer that needs
+        // network co-location does its OWN rekey+repartition into a private internal
+        // topic, symmetrically, right before the processor that needs it.
         val fromBlockTracking = builder
             .stream(Topics.RAW_LOGS, Consumed.with(stringSerde, rawLogSerde))
             .selectKey({ _, raw -> raw.network }, Named.`as`("rekey-raw-logs-by-network-for-tracking"))
@@ -132,8 +134,21 @@ object IndexerTopology {
                 StoreNames.BLOCK_TRACKING, StoreNames.RECONCILIATION, StoreNames.CONFIRMATION,
             )
 
+        // Same pattern as raw-logs-by-network above: decoded-logs-topic itself stays
+        // EventKey-keyed with default partitioning (DecodeTopology's contract, relied
+        // on by every consumer); this internal rekey+repartition is ReconciliationProcessor's
+        // own private input, scoped to exactly the one thing that needs network
+        // co-location with BLOCK_TRACKING/CONFIRMATION. ReconciliationProcessor recovers
+        // the real EventKey from the record's VALUE (network/txHash/logIndex), since its
+        // incoming key here is "network", not EventKey - see its kdoc.
         val fromReconciliation = builder
             .stream(Topics.DECODED_LOGS, Consumed.with(stringSerde, decodedSerde))
+            .selectKey({ _, envelope -> envelope.network }, Named.`as`("rekey-decoded-logs-by-network-for-reconciliation"))
+            .repartition(
+                Repartitioned.with(stringSerde, decodedSerde)
+                    .withName("decoded-logs-by-network")
+                    .withStreamPartitioner(NetworkStreamPartitioner.forNetwork<String, DecodedEventEnvelope> { it.network }),
+            )
             .process(
                 ProcessorSupplier<String, DecodedEventEnvelope, String, LifecycleOutput> { ReconciliationProcessor() },
                 Named.`as`("reconciliation-processor"),

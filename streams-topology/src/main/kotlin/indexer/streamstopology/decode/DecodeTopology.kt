@@ -8,7 +8,6 @@ import indexer.schema.EventKey
 import indexer.schema.RawLogRecord
 import indexer.schema.SubscriptionRecord
 import indexer.schema.SubscriptionStatus
-import indexer.streamstopology.lifecycle.NetworkStreamPartitioner
 import indexer.streamstopology.serde.jsonSerdeOf
 import org.apache.kafka.common.serialization.Serdes
 import org.apache.kafka.streams.StreamsBuilder
@@ -80,17 +79,17 @@ object DecodeTopology {
             .branch(
                 { _, result -> result is DecodeResult.Success },
                 Branched.withConsumer { successes ->
-                    // Partitioned by NETWORK (not the EventKey record key, which is left
-                    // unchanged for point lookups) so every decoded event for a network
-                    // co-partitions with that network's block-tracking state - see
-                    // NetworkStreamPartitioner's kdoc for the cross-task visibility bug
-                    // this fixes (design doc 4.5/4.8).
+                    // Default key-hash partitioning on EventKey, deliberately - this is
+                    // the one external contract every consumer of decoded-logs-topic can
+                    // rely on (point lookups, compaction-safety, consistency with every
+                    // other event-topic in the system). Any internal processing that
+                    // needs network-level co-location (e.g. reconciliation, which must
+                    // sit on the same task as that network's block-tracking state) does
+                    // its OWN rekey+repartition after consuming this topic - see
+                    // IndexerTopology's "decoded-logs-by-network" step - rather than this
+                    // topic's own partitioning being silently overridden for everyone.
                     successes.mapValues { (it as DecodeResult.Success).envelope }
-                        .to(
-                            decodedLogsTopic,
-                            Produced.with(stringSerde, decodedSerde)
-                                .withStreamPartitioner(NetworkStreamPartitioner.forNetwork { env -> env.network }),
-                        )
+                        .to(decodedLogsTopic, Produced.with(stringSerde, decodedSerde))
                 },
             )
             .defaultBranch(

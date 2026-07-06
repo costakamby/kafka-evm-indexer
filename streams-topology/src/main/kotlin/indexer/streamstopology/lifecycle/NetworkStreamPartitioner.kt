@@ -14,32 +14,30 @@ import org.apache.kafka.streams.processor.StreamPartitioner
  * `builder.addStateStore(...)`, which Kafka Streams instantiates ONE COPY OF PER
  * TASK (i.e. per partition of the co-partitioned sub-topology) - a task can only
  * see and mutate its OWN local slice of BLOCK_TRACKING / RECONCILIATION /
- * CONFIRMATION, never another task's.
+ * CONFIRMATION, never another task's. Two events for the SAME network landing
+ * on DIFFERENT tasks means [BlockTrackingProcessor]'s punctuator (which only
+ * scans ITS OWN task's local CONFIRMATION store) can permanently miss
+ * promoting/invalidating one of them - exactly the failure observed: one event
+ * stuck UNCONFIRMED forever, a sibling event on the same network correctly
+ * reaching CONFIRMED, purely depending on which task its key happened to hash to.
  *
- * Raw-logs-topic is deliberately rekeyed by network before block-tracking
- * (`rekey-raw-logs-by-network-for-tracking`), so ALL of one network's block
- * height/hash observations funnel to exactly ONE task. But decoded-logs-topic
- * (feeding [ReconciliationProcessor], which seeds/updates CONFIRMATION store
- * entries) was left keyed by [indexer.schema.EventKey] (network:txHash:logIndex) -
- * a DIFFERENT partitioning scheme. With >1 partition, two events on the SAME
- * network land on DIFFERENT tasks whenever their EventKey hashes differently,
- * so [BlockTrackingProcessor]'s punctuator (which only scans ITS OWN task's local
- * CONFIRMATION store) can permanently miss promoting/invalidating them - exactly
- * the failure observed: one event stuck UNCONFIRMED forever, a sibling event on
- * the same network correctly reaching CONFIRMED, purely depending on which task
- * its txHash happened to hash to.
+ * The fix, applied symmetrically in IndexerTopology for BOTH inputs that feed
+ * these stores: each does its OWN internal `.selectKey(network).repartition(...)`
+ * into a private, network-partitioned internal topic
+ * (`raw-logs-by-network`, `decoded-logs-by-network`) immediately before the
+ * processor that needs co-location - never by overriding the EXTERNAL topic's
+ * own partitioning (raw-logs-topic, decoded-logs-topic keep default key-hash
+ * partitioning on their real keys; that's the contract every other consumer of
+ * those topics relies on). CONFIRMED_EVENTS/RECONCILIATION_ANOMALIES (pure
+ * output sinks, never read back into a co-partitioned store) are unaffected -
+ * they stay keyed by EventKey with default partitioning, recovered from the
+ * VALUE by the processors that emit them (see [ReconciliationProcessor]'s kdoc).
  *
- * The fix: make decoded-logs-topic's OUTPUT PARTITION (not its logical record
- * key - EventKey is preserved unchanged for point lookups) depend on the
- * decoded event's network, using the exact same hash formula as the raw-logs
- * rekey below. This guarantees every event for a given network lands on the
- * SAME task that owns that network's block-tracking state, restoring correct
- * cross-store visibility, while leaving CONFIRMED_EVENTS/RECONCILIATION_ANOMALIES
- * (pure output sinks, never read back into a co-partitioned store) unaffected.
- *
- * Assumes raw-logs-topic and decoded-logs-topic have the SAME partition count
- * (true today per [indexer.topicadmin.TopicDefinitions] - both 6) - co-partitioning
- * by the same formula only lines up if [numPartitions] matches on both sides.
+ * [numPartitions] is whatever the INTERNAL repartition topic is configured
+ * with (Kafka Streams sizes it to match the upstream source topic's partition
+ * count by default) - this partitioner doesn't need raw-logs-topic and
+ * decoded-logs-topic to share a partition count with each other, since each
+ * gets its own independently-sized internal repartition topic.
  */
 object NetworkStreamPartitioner {
     fun <K, V> forNetwork(networkOf: (V) -> String): StreamPartitioner<K, V> =
