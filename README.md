@@ -1,5 +1,8 @@
 # kafka-evm-indexer
 
+[![CI](https://github.com/costakamby/kafka-evm-indexer/actions/workflows/ci.yml/badge.svg)](https://github.com/costakamby/kafka-evm-indexer/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
+
 A Kotlin, Kafka Streams-first EVM event indexer. Dynamically subscribe to
 contracts across multiple chains, ingest logs via both WebSocket and REST
 polling, decode them against their ABI, reconcile the two ingestion paths
