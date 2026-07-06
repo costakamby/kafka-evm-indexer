@@ -1,0 +1,27 @@
+<configuration>
+    <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %-5level %logger{28} - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- Silence the very chatty infra so the pipeline's own logs are readable. -->
+    <logger name="com.github.dockerjava" level="WARN"/>
+    <logger name="org.testcontainers" level="WARN"/>
+    <logger name="tc" level="WARN"/>
+    <logger name="org.apache.kafka" level="WARN"/>
+    <logger name="io.netty" level="WARN"/>
+    <logger name="io.ktor" level="WARN"/>
+    <logger name="org.web3j" level="WARN"/>
+    <logger name="org.flywaydb" level="WARN"/>
+    <logger name="com.zaxxer.hikari" level="WARN"/>
+
+    <!-- Our harness + modules at INFO/DEBUG. -->
+    <logger name="harness" level="DEBUG"/>
+    <logger name="indexer" level="INFO"/>
+    <logger name="DIAG" level="INFO"/>
+
+    <root level="WARN">
+        <appender-ref ref="STDOUT"/>
+    </root>
+</configuration>

@@ -8,6 +8,7 @@ import indexer.schema.EventKey
 import indexer.schema.RawLogRecord
 import indexer.schema.SubscriptionRecord
 import indexer.schema.SubscriptionStatus
+import indexer.streamstopology.lifecycle.NetworkStreamPartitioner
 import indexer.streamstopology.serde.jsonSerdeOf
 import org.apache.kafka.common.serialization.Serdes
 import org.apache.kafka.streams.StreamsBuilder
@@ -79,8 +80,17 @@ object DecodeTopology {
             .branch(
                 { _, result -> result is DecodeResult.Success },
                 Branched.withConsumer { successes ->
+                    // Partitioned by NETWORK (not the EventKey record key, which is left
+                    // unchanged for point lookups) so every decoded event for a network
+                    // co-partitions with that network's block-tracking state - see
+                    // NetworkStreamPartitioner's kdoc for the cross-task visibility bug
+                    // this fixes (design doc 4.5/4.8).
                     successes.mapValues { (it as DecodeResult.Success).envelope }
-                        .to(decodedLogsTopic, Produced.with(stringSerde, decodedSerde))
+                        .to(
+                            decodedLogsTopic,
+                            Produced.with(stringSerde, decodedSerde)
+                                .withStreamPartitioner(NetworkStreamPartitioner.forNetwork { env -> env.network }),
+                        )
                 },
             )
             .defaultBranch(
