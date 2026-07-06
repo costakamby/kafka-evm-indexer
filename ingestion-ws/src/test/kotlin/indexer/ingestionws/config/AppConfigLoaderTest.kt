@@ -50,4 +50,26 @@ class AppConfigLoaderTest {
         config.kafka.bootstrapServers shouldBe "localhost:9092"
         config.kafka.rawLogsTopic shouldBe "raw-logs-topic"
     }
+
+    @Test
+    fun `WS_RPC_URL_ (NETWORK) env var overrides that network's placeholder wsRpcUrl`() {
+        val overridden = AppConfigLoader.load(
+            env = mapOf(
+                "WS_RPC_URL_ETHEREUM" to "wss://eth-mainnet.g.alchemy.com/v2/real-key",
+                "WS_RPC_URL_POLYGON" to "wss://polygon-mainnet.g.alchemy.com/v2/real-key",
+            ),
+        )
+
+        overridden.networks.getValue("ethereum").wsRpcUrl shouldBe "wss://eth-mainnet.g.alchemy.com/v2/real-key"
+        overridden.networks.getValue("polygon").wsRpcUrl shouldBe "wss://polygon-mainnet.g.alchemy.com/v2/real-key"
+        // networks with no matching env var keep the checked-in placeholder untouched
+        overridden.networks.getValue("arbitrum").wsRpcUrl shouldBe config.networks.getValue("arbitrum").wsRpcUrl
+    }
+
+    @Test
+    fun `a blank WS_RPC_URL_ (NETWORK) env var is ignored, not applied as an override`() {
+        val overridden = AppConfigLoader.load(env = mapOf("WS_RPC_URL_ETHEREUM" to "   "))
+
+        overridden.networks.getValue("ethereum").wsRpcUrl shouldBe config.networks.getValue("ethereum").wsRpcUrl
+    }
 }
