@@ -55,20 +55,20 @@ class WsIngestionRunner(
     suspend fun run() {
         var attempt = 0
         while (currentCoroutineContext().isActive) {
-            val addresses = subscriptionsReader.fetchSubscriptions(network = network).map { it.address }.distinct()
-            if (addresses.isEmpty()) {
-                delay(subscriptionRefreshInterval)
-                continue
-            }
-
-            if (lastSeenBlock == null) {
-                lastSeenBlock = rpcClient.ethBlockNumber()
-            } else if (attempt > 0) {
-                delay(backoff.delayFor(attempt))
-                performCatchUp(addresses)
-            }
-
             try {
+                val addresses = subscriptionsReader.fetchSubscriptions(network = network).map { it.address }.distinct()
+                if (addresses.isEmpty()) {
+                    delay(subscriptionRefreshInterval)
+                    continue
+                }
+
+                if (lastSeenBlock == null) {
+                    lastSeenBlock = rpcClient.ethBlockNumber()
+                } else if (attempt > 0) {
+                    delay(backoff.delayFor(attempt))
+                    performCatchUp(addresses)
+                }
+
                 transport.connectAndStream(addresses) { log ->
                     val record = log.toRawLogRecord(network, IngestionSource.WS, clock())
                     producer.send(record)
@@ -78,7 +78,14 @@ class WsIngestionRunner(
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                logger.warn("[{}] WS stream ended with an error, will reconnect: {}", network, e.message)
+                // Covers a transient failure ANYWHERE in this cycle - fetching active
+                // subscriptions, establishing/refreshing the block-number baseline, the
+                // catch-up eth_getLogs call, or the WS stream itself. All are equally
+                // "this cycle didn't complete, retry" - none may propagate uncaught out
+                // of run(), or they'd crash the whole process (a real outage this project
+                // hit: a brief subscription-api restart killed every network's WS listener
+                // in one shot, not just that cycle).
+                logger.warn("[{}] WS ingestion cycle failed, will reconnect: {}", network, e.message)
             }
             attempt += 1
         }

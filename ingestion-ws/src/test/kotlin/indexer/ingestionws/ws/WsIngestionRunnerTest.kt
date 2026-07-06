@@ -186,4 +186,68 @@ class WsIngestionRunnerTest {
 
         rpcClient.getLogsCalls shouldBe emptyList()
     }
+
+    /**
+     * Regression test for a real outage: subscription-api was briefly unreachable
+     * during a redeploy, and ingestion-ws's WHOLE PROCESS crashed - not just that
+     * one network's cycle. Root cause: `subscriptionsReader.fetchSubscriptions(...)`
+     * was called OUTSIDE the only try/catch in the loop (which wrapped just
+     * `transport.connectAndStream(...)`), so a transient connection failure there
+     * propagated uncaught out of `run()`, out of the `launch { }` in Application.kt,
+     * and crashed the whole `runBlocking` block - exactly the kind of failure
+     * `ingestion-poll`'s per-cycle try/catch already guards against.
+     */
+    @Test
+    fun `a transient subscriptionsReader failure is logged and retried, never propagates out of run`() = runTest {
+        val rpcClient = RecordingEthRpcClient(blockNumbers = mutableListOf(50L), logsByRange = emptyMap())
+        val producer = RecordingRawLogProducer()
+        val started = CompletableDeferred<Unit>()
+        val attemptCount = AtomicInteger(0)
+
+        val flakySubscriptionsReader = object : SubscriptionsReader {
+            override suspend fun fetchSubscriptions(network: String?, status: SubscriptionStatusFilter): List<SubscriptionRecord> {
+                if (attemptCount.incrementAndGet() == 1) {
+                    throw java.net.ConnectException("Connection refused")
+                }
+                return listOf(
+                    SubscriptionRecord(
+                        id = "sub-0xabc",
+                        network = network ?: "ethereum",
+                        address = "0xabc",
+                        abiRef = "erc20-v1",
+                        startBlock = sentinelStartBlock,
+                        includeEvents = listOf("Transfer"),
+                        status = SubscriptionStatus.ACTIVE,
+                        createdAtEpochMillis = 0L,
+                    ),
+                )
+            }
+        }
+
+        val transport = object : WsTransport {
+            override suspend fun connectAndStream(addresses: List<String>, onLog: suspend (RawLogDto) -> Unit) {
+                started.complete(Unit)
+                awaitCancellation()
+            }
+        }
+
+        val runner = WsIngestionRunner(
+            network = "ethereum",
+            transport = transport,
+            rpcClient = rpcClient,
+            subscriptionsReader = flakySubscriptionsReader,
+            producer = producer,
+            backoff = ExponentialBackoff(initial = 1.milliseconds, max = 5.milliseconds, multiplier = 1.0),
+        )
+
+        val job = launch { runner.run() }
+        advanceUntilIdle()
+        started.await()
+        advanceUntilIdle()
+
+        // The runner survived the first failed fetch and successfully connected
+        // on a later cycle - it never propagated the exception out of run().
+        job.isActive shouldBe true
+        job.cancel()
+    }
 }
