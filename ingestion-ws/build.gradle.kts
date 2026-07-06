@@ -17,8 +17,6 @@ dependencies {
     implementation(libs.ktor.client.core)
     implementation(libs.ktor.client.cio)
     implementation(libs.ktor.client.websockets)
-    implementation(libs.ktor.client.content.negotiation)
-    implementation(libs.ktor.serialization.kotlinx.json)
 
     implementation(libs.hoplite.core)
     implementation(libs.hoplite.yaml)
@@ -38,5 +36,4 @@ dependencies {
     testImplementation(libs.ktor.server.core)
     testImplementation(libs.ktor.server.cio)
     testImplementation(libs.ktor.server.websockets)
-    testImplementation(libs.ktor.server.content.negotiation)
 }

@@ -19,9 +19,6 @@ dependencies {
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.serialization.kotlinx.json)
 
-    implementation(libs.web3j.core)
-    implementation(libs.web3j.abi)
-
     implementation(libs.hoplite.core)
     implementation(libs.hoplite.yaml)
 
