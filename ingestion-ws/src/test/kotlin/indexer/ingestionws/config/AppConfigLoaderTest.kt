@@ -94,4 +94,26 @@ class AppConfigLoaderTest {
 
         overridden.networks.getValue("ethereum").rpcUrl shouldBe config.networks.getValue("ethereum").rpcUrl
     }
+
+    @Test
+    fun `KAFKA_BOOTSTRAP_SERVERS env var overrides the checked-in default, for bring-your-own-Kafka setups`() {
+        val overridden = AppConfigLoader.load(env = mapOf("KAFKA_BOOTSTRAP_SERVERS" to "my-broker:9092"))
+
+        overridden.kafka.bootstrapServers shouldBe "my-broker:9092"
+        overridden.kafka.rawLogsTopic shouldBe config.kafka.rawLogsTopic
+    }
+
+    @Test
+    fun `a blank KAFKA_BOOTSTRAP_SERVERS env var is ignored, not applied as an override`() {
+        val overridden = AppConfigLoader.load(env = mapOf("KAFKA_BOOTSTRAP_SERVERS" to "  "))
+
+        overridden.kafka.bootstrapServers shouldBe config.kafka.bootstrapServers
+    }
+
+    @Test
+    fun `SUBSCRIPTION_API_BASE_URL env var overrides the checked-in default`() {
+        val overridden = AppConfigLoader.load(env = mapOf("SUBSCRIPTION_API_BASE_URL" to "http://my-subscription-api:9000"))
+
+        overridden.subscriptionApi.baseUrl shouldBe "http://my-subscription-api:9000"
+    }
 }

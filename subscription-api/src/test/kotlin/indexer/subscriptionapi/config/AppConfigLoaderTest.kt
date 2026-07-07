@@ -41,4 +41,19 @@ class AppConfigLoaderTest {
         config.kafka.bootstrapServers shouldBe "localhost:9092"
         config.kafka.applicationId shouldBe "subscription-api"
     }
+
+    @Test
+    fun `KAFKA_BOOTSTRAP_SERVERS env var overrides the checked-in default, for bring-your-own-Kafka setups`() {
+        val overridden = AppConfigLoader.load(env = mapOf("KAFKA_BOOTSTRAP_SERVERS" to "my-broker:9092"))
+
+        overridden.kafka.bootstrapServers shouldBe "my-broker:9092"
+        overridden.kafka.applicationId shouldBe "subscription-api"
+    }
+
+    @Test
+    fun `a blank KAFKA_BOOTSTRAP_SERVERS env var is ignored, not applied as an override`() {
+        val overridden = AppConfigLoader.load(env = mapOf("KAFKA_BOOTSTRAP_SERVERS" to "  "))
+
+        overridden.kafka.bootstrapServers shouldBe "localhost:9092"
+    }
 }

@@ -77,4 +77,27 @@ class PollAppConfigLoaderTest {
 
         overridden.networks.getValue("ethereum").rpcUrl shouldBe default.networks.getValue("ethereum").rpcUrl
     }
+
+    @Test
+    fun `KAFKA_BOOTSTRAP_SERVERS env var overrides the checked-in default, for bring-your-own-Kafka setups`() {
+        val overridden = PollAppConfigLoader.load(env = mapOf("KAFKA_BOOTSTRAP_SERVERS" to "my-broker:9092"))
+
+        overridden.poll.kafkaBootstrapServers shouldBe "my-broker:9092"
+    }
+
+    @Test
+    fun `a blank KAFKA_BOOTSTRAP_SERVERS env var is ignored, not applied as an override`() {
+        val default = PollAppConfigLoader.load()
+
+        val overridden = PollAppConfigLoader.load(env = mapOf("KAFKA_BOOTSTRAP_SERVERS" to "  "))
+
+        overridden.poll.kafkaBootstrapServers shouldBe default.poll.kafkaBootstrapServers
+    }
+
+    @Test
+    fun `SUBSCRIPTION_API_BASE_URL env var overrides the checked-in default`() {
+        val overridden = PollAppConfigLoader.load(env = mapOf("SUBSCRIPTION_API_BASE_URL" to "http://my-subscription-api:9000"))
+
+        overridden.poll.subscriptionApiBaseUrl shouldBe "http://my-subscription-api:9000"
+    }
 }

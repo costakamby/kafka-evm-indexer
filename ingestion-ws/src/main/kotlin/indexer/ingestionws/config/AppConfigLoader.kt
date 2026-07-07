@@ -5,13 +5,19 @@ import com.sksamuel.hoplite.addResourceSource
 
 object AppConfigLoader {
     /**
-     * Loads application.yaml, then applies per-network env var overrides on
-     * top of the checked-in defaults - this is how a real Alchemy/Infura
-     * endpoint gets supplied without editing the checked-in config (see
-     * application.yaml's placeholder note):
+     * Loads application.yaml, then applies env var overrides on top of the
+     * checked-in defaults, so this can point at real infrastructure without
+     * editing checked-in config - see the root README's Configuration
+     * section:
      *  - `WS_RPC_URL_<NETWORK>` overrides wsRpcUrl (eth_subscribe).
      *  - `RPC_URL_<NETWORK>` overrides rpcUrl (used for post-reconnect
      *    eth_getLogs catch-up calls, design decision 7).
+     *  - `KAFKA_BOOTSTRAP_SERVERS` overrides kafka.bootstrapServers - the
+     *    convention shared by the wider Kafka ecosystem's own tooling
+     *    (Kafka Connect, Confluent's Docker images), used here instead of a
+     *    Hoplite-native override so it stays instantly recognizable rather
+     *    than needing Hoplite's own `config.override.<path>` naming.
+     *  - `SUBSCRIPTION_API_BASE_URL` overrides subscriptionApi.baseUrl.
      * [env] defaults to the real process environment; overridable for tests
      * so this doesn't require mutating actual OS environment variables.
      */
@@ -30,6 +36,14 @@ object AppConfigLoader {
                 wsRpcUrl = wsOverride ?: networkConfig.wsRpcUrl,
             )
         }
-        return base.copy(networks = overriddenNetworks)
+
+        val kafkaBootstrapOverride = env["KAFKA_BOOTSTRAP_SERVERS"]?.takeIf { it.isNotBlank() }
+        val subscriptionApiBaseUrlOverride = env["SUBSCRIPTION_API_BASE_URL"]?.takeIf { it.isNotBlank() }
+
+        return base.copy(
+            networks = overriddenNetworks,
+            kafka = base.kafka.copy(bootstrapServers = kafkaBootstrapOverride ?: base.kafka.bootstrapServers),
+            subscriptionApi = base.subscriptionApi.copy(baseUrl = subscriptionApiBaseUrlOverride ?: base.subscriptionApi.baseUrl),
+        )
     }
 }

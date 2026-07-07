@@ -27,4 +27,43 @@ class SinkConfigLoaderTest {
         config.postgres.username shouldBe "indexer"
         config.postgres.password shouldBe "indexer"
     }
+
+    @Test
+    fun `KAFKA_BOOTSTRAP_SERVERS env var overrides the checked-in default, for bring-your-own-Kafka setups`() {
+        val overridden = SinkConfigLoader.load(env = mapOf("KAFKA_BOOTSTRAP_SERVERS" to "my-broker:9092"))
+
+        overridden.kafka.bootstrapServers shouldBe "my-broker:9092"
+        overridden.kafka.topic shouldBe "confirmed-events-topic"
+    }
+
+    @Test
+    fun `POSTGRES_JDBC_URL, POSTGRES_USERNAME and POSTGRES_PASSWORD env vars override the checked-in defaults`() {
+        val overridden = SinkConfigLoader.load(
+            env = mapOf(
+                "POSTGRES_JDBC_URL" to "jdbc:postgresql://my-db-host:5432/mydb",
+                "POSTGRES_USERNAME" to "my-user",
+                "POSTGRES_PASSWORD" to "my-password",
+            ),
+        )
+
+        overridden.postgres.jdbcUrl shouldBe "jdbc:postgresql://my-db-host:5432/mydb"
+        overridden.postgres.username shouldBe "my-user"
+        overridden.postgres.password shouldBe "my-password"
+    }
+
+    @Test
+    fun `blank override env vars are ignored, not applied as overrides`() {
+        val default = SinkConfigLoader.load()
+
+        val overridden = SinkConfigLoader.load(
+            env = mapOf(
+                "KAFKA_BOOTSTRAP_SERVERS" to " ",
+                "POSTGRES_JDBC_URL" to " ",
+                "POSTGRES_USERNAME" to " ",
+                "POSTGRES_PASSWORD" to " ",
+            ),
+        )
+
+        overridden shouldBe default
+    }
 }
