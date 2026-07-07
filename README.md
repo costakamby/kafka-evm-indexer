@@ -84,21 +84,67 @@ subscriptions table — no cross-instance forwarding needed.
 | `postgres-sink` | Consumes `confirmed-events-topic`, idempotently upserts into Postgres, and updates rows in place on an `INVALIDATED` correction. |
 | `integration-tests` | Full-stack, real-broker tests: a real chain reorg on a forked Anvil instance, and a kill-and-restart HA recovery test. |
 
-## Quick start
+## Prerequisites
 
-Requires JDK 21, Docker, and (for anything beyond a local Anvil fork) an RPC
-provider like [Alchemy](https://www.alchemy.com/) — free tier is fine.
+- JDK 21
+- A Kafka cluster and a Postgres database — bring your own, or use the
+  bundled `docker-compose.yml` for a local sandbox (Option B below)
+- An RPC provider like [Alchemy](https://www.alchemy.com/) for any network
+  beyond a local Anvil fork — free tier is fine
 
 ```bash
 git clone https://github.com/costakamby/kafka-evm-indexer.git
 cd kafka-evm-indexer
-cp .env.example .env   # see below for what to fill in
 ```
 
-**1. Start the dev stack** — Kafka (KRaft), Postgres, [Kafbat UI](https://github.com/kafbat/kafka-ui), and Anvil (only needed if you plan to run the integration tests, not for tracking a real chain):
+**Provision topics once**, before starting anything else (Kafka's
+`auto.create.topics.enable=false` in the bundled dev stack, and it's good
+practice against any cluster — partition counts and compaction policy
+should be explicit, not left to broker defaults):
 
 ```bash
+KAFKA_BOOTSTRAP_SERVERS=my-kafka:9092 ./gradlew :topic-admin:run
+# or pass it positionally: ./gradlew :topic-admin:run --args="my-kafka:9092"
+```
+
+## Run it — Option A: against your own Kafka + Postgres
+
+Every module is a plain JVM process configured entirely by environment
+variables — no checked-in file needs editing. Set what you need (see
+[Configuration](#configuration) for the full list) and start each service:
+
+```bash
+export KAFKA_BOOTSTRAP_SERVERS=my-kafka:9092
+export POSTGRES_JDBC_URL=jdbc:postgresql://my-postgres:5432/indexer
+export POSTGRES_USERNAME=myuser
+export POSTGRES_PASSWORD=mypassword
+export RPC_URL_ETHEREUM=https://eth-mainnet.g.alchemy.com/v2/your-key
+export WS_RPC_URL_ETHEREUM=wss://eth-mainnet.g.alchemy.com/v2/your-key
+
+./gradlew :subscription-api:run   # REST API + Kafka Streams topology, port 8081
+./gradlew :ingestion-poll:run     # polls subscription-api, emits to raw-logs-topic
+./gradlew :postgres-sink:run      # runs its Flyway migration, then sinks confirmed-events-topic → Postgres
+./gradlew :ingestion-ws:run       # needs a real wss:// endpoint per network - see Configuration below
+```
+
+Or build once and run the installed distributions directly (e.g. in a
+container), same environment variables:
+
+```bash
+./gradlew installDist
+KAFKA_BOOTSTRAP_SERVERS=my-kafka:9092 ./subscription-api/build/install/subscription-api/bin/subscription-api
+```
+
+## Run it — Option B: local sandbox via docker-compose
+
+No infrastructure of your own? The bundled stack gives you Kafka (KRaft),
+Postgres, [Kafbat UI](https://github.com/kafbat/kafka-ui), and Anvil (only
+needed for the integration tests, not for tracking a real chain):
+
+```bash
+cp .env.example .env   # RPC URL overrides - see Configuration below
 docker compose up -d kafka postgres kafbat-ui
+./gradlew :topic-admin:run --args="localhost:9092"
 ```
 
 | Service | Address |
@@ -107,26 +153,17 @@ docker compose up -d kafka postgres kafbat-ui
 | Postgres | `localhost:15432` (db/user/password: `indexer`) |
 | Kafbat UI | http://localhost:18080 |
 
-**2. Provision topics** (once — Kafka has `auto.create.topics.enable=false`, so this must run before anything else):
+These are already the checked-in defaults in every module's
+`application.yaml`, so no environment variables are needed for this path —
+just run each service as in Option A, minus the `export` lines. Every
+`./gradlew :<module>:run` task automatically loads `.env` from the repo
+root into the process environment too, so RPC URL overrides in `.env` apply
+without a manual `export` step.
 
-```bash
-./gradlew :topic-admin:run --args="localhost:9092"
-```
+## Try it: subscribe to a contract
 
-**3. Start the services**, each in its own terminal:
-
-```bash
-./gradlew :subscription-api:run   # REST API + Kafka Streams topology, port 8081
-./gradlew :ingestion-poll:run     # polls subscription-api, emits to raw-logs-topic
-./gradlew :postgres-sink:run      # runs its Flyway migration, then sinks confirmed-events-topic → Postgres
-./gradlew :ingestion-ws:run       # needs a real wss:// endpoint per network - see Configuration below
-```
-
-Each `run` task automatically loads `.env` from the repo root into the
-process environment, so RPC URL overrides (below) apply without a manual
-`export` step.
-
-**4. Subscribe to a contract:**
+Once `subscription-api` and at least one ingestion module are running
+(either option above):
 
 ```bash
 curl -X POST localhost:8081/subscriptions -H 'Content-Type: application/json' -d '{
@@ -147,25 +184,28 @@ ABI file there and reference it by filename (without `.json`) to subscribe
 to other contract types.
 
 From here, raw logs flow `raw-logs-topic → decoded-logs-topic →
-confirmed-events-topic`, watchable live in Kafbat UI, with confirmed/
-invalidated rows landing in Postgres's `confirmed_events` table.
+confirmed-events-topic`. If you're on the docker-compose sandbox, watch it
+live in Kafbat UI; either way, confirmed/invalidated rows land in
+Postgres's `confirmed_events` table.
 
 ## Configuration
 
-Every module's `application.yaml` ships with free public RPC defaults
-(`chainId`, `rpcUrl`, `confirmationDepth` per network — Ethereum 12,
-Arbitrum/Base/Optimism 20, Polygon 128 confirmations). Override the RPC
-endpoints per network via `.env` (see `.env.example`) without editing any
-checked-in config:
+Every setting below has a checked-in default matching the docker-compose
+sandbox (Option B) — set only what you need for Option A. None require
+editing a checked-in file.
 
-```bash
-RPC_URL_ETHEREUM=https://eth-mainnet.g.alchemy.com/v2/your-key      # ingestion-poll + ingestion-ws's own eth_getLogs catch-up
-WS_RPC_URL_ETHEREUM=wss://eth-mainnet.g.alchemy.com/v2/your-key     # ingestion-ws's eth_subscribe (needs a real wss:// endpoint - the checked-in public RPCs are HTTPS-only)
-```
+| Variable | Default | Used by | Purpose |
+|---|---|---|---|
+| `KAFKA_BOOTSTRAP_SERVERS` | `localhost:9092` | all services | Kafka cluster address — the same convention used by Kafka Connect and Confluent's own Docker images. |
+| `POSTGRES_JDBC_URL` | `jdbc:postgresql://localhost:15432/indexer` | `postgres-sink` | Target database. |
+| `POSTGRES_USERNAME` | `indexer` | `postgres-sink` | |
+| `POSTGRES_PASSWORD` | `indexer` | `postgres-sink` | |
+| `SUBSCRIPTION_API_BASE_URL` | `http://localhost:8081` | `ingestion-ws`, `ingestion-poll` | Where to poll for active subscriptions. |
+| `RPC_URL_<NETWORK>` | a free public HTTPS endpoint per network | `ingestion-poll`, `ingestion-ws` | Per-network `eth_getLogs` endpoint (`<NETWORK>` is `ETHEREUM`, `ARBITRUM`, `BASE`, `OPTIMISM`, or `POLYGON`). Free-tier providers cap `eth_getLogs` at a small block range — see `ingestion-poll`'s README if you hit this. |
+| `WS_RPC_URL_<NETWORK>` | an unset placeholder | `ingestion-ws` | Per-network `eth_subscribe` endpoint — **needs a real `wss://` URL** (e.g. Alchemy/Infura); the free public HTTPS endpoints above don't support WebSockets. `ingestion-ws` simply won't connect for a network left unset. |
 
-Fill in whichever networks you're actually subscribing contracts on; any
-left unset keep the checked-in default (and `ingestion-ws` will simply fail
-to connect for that one network only).
+A blank value for any of these is treated as unset (falls back to the
+default), so an empty `export FOO=` never silently breaks anything.
 
 ## Testing
 
