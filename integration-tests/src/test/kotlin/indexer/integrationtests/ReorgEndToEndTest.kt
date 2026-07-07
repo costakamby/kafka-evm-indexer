@@ -2,12 +2,19 @@ package indexer.integrationtests
 
 import indexer.integrationtests.fixtures.Erc20Fixture
 import indexer.integrationtests.harness.FullPipeline
+import indexer.integrationtests.harness.KafkaRecordTail
+import indexer.integrationtests.harness.KafkaRecordTail.Companion.confirmedEventsTail
+import indexer.integrationtests.harness.KafkaRecordTail.Companion.rawLogsTail
 import indexer.integrationtests.harness.KafkaTestBroker
-import indexer.integrationtests.harness.KafkaTopicTail
 import indexer.integrationtests.harness.SharedInfra
 import indexer.integrationtests.harness.TEST_NETWORK
+import indexer.integrationtests.harness.eventsFor
+import indexer.integrationtests.harness.hasWsLogFor
+import indexer.integrationtests.harness.historyFor
 import indexer.schema.ConfirmationStatus
+import indexer.schema.DecodedEventEnvelope
 import indexer.schema.EventKey
+import indexer.schema.RawLogRecord
 import org.awaitility.core.ConditionTimeoutException
 import org.awaitility.kotlin.await
 import org.junit.jupiter.api.AfterAll
@@ -39,8 +46,8 @@ class ReorgEndToEndTest {
         private lateinit var kafka: KafkaTestBroker
         private lateinit var dataSource: DataSource
         private lateinit var pipeline: FullPipeline
-        private lateinit var tail: KafkaTopicTail
-        private lateinit var rawTail: indexer.integrationtests.harness.RawLogTail
+        private lateinit var tail: KafkaRecordTail<DecodedEventEnvelope>
+        private lateinit var rawTail: KafkaRecordTail<RawLogRecord>
 
         private const val RECIPIENT = "0x00000000000000000000000000000000000000f1"
         private val log = LoggerFactory.getLogger("harness.ReorgTest")
@@ -52,8 +59,8 @@ class ReorgEndToEndTest {
             dataSource = SharedInfra.newPostgresDataSource()
             pipeline = FullPipeline(kafka.bootstrapServers, SharedInfra.anvil, dataSource, TEST_NETWORK, includeWs = true)
             pipeline.start()
-            tail = KafkaTopicTail(kafka.bootstrapServers).start()
-            rawTail = indexer.integrationtests.harness.RawLogTail(kafka.bootstrapServers).start()
+            tail = confirmedEventsTail(kafka.bootstrapServers).start()
+            rawTail = rawLogsTail(kafka.bootstrapServers).start()
         }
 
         @JvmStatic
